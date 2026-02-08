@@ -5,65 +5,65 @@ const XLSX = require("xlsx");
 const fs = require("fs");
 
 exports.createExam = async (req, res) => {
-    try {
-        const { title, examCode, duration, startTime, endTime, adminEmail } = req.body;
+  try {
+    const { title, examCode, duration, startTime, endTime, adminEmail } = req.body;
 
-        examCodeUpper = examCode.toUpperCase().trim();
+    examCodeUpper = examCode.toUpperCase().trim();
 
-        // 🔥 Check if examCode already exists
-        const existingExam = await Exam.findOne({ examCode: examCodeUpper });
+    // 🔥 Check if examCode already exists
+    const existingExam = await Exam.findOne({ examCode: examCodeUpper });
 
-        if (existingExam) {
-            return res.status(400).json({
-                message: "Exam code already exists. Please use a different code."
-            });
-        }
-
-        if (!req.file) {
-            return res.status(400).json({
-                message: "Excel file is required"
-            });
-        }
-
-        const workbook = XLSX.readFile(req.file.path);
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const data = XLSX.utils.sheet_to_json(sheet);
-
-        const questions = data.map(q => ({
-            question: q["Question"],
-            options: {
-                A: q["Option A"],
-                B: q["Option B"],
-                C: q["Option C"],
-                D: q["Option D"]
-            },
-            correctAnswer: q["Correct Answer"],
-            marks: q["Marks"]
-        }));
-
-        const exam = await Exam.create({
-            title,
-            examCode: examCodeUpper,
-            duration,
-            startTime,
-            endTime,
-            questions,
-            createdBy: adminEmail
-        });
-
-        fs.unlinkSync(req.file.path);
-
-        res.status(201).json({ message: "Exam created", exam });
-
-    } catch (error) {
-
-        if (error.code === 11000) {
-            return res.status(400).json({
-                message: "Exam code already exists. Please choose a different code."
-            });
-        }
-        res.status(500).json({ error: error.message });
+    if (existingExam) {
+      return res.status(400).json({
+        message: "Exam code already exists. Please use a different code."
+      });
     }
+
+    if (!req.file) {
+      return res.status(400).json({
+        message: "Excel file is required"
+      });
+    }
+
+    const workbook = XLSX.readFile(req.file.path);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(sheet);
+
+    const questions = data.map(q => ({
+      question: q["Question"],
+      options: {
+        A: q["Option A"],
+        B: q["Option B"],
+        C: q["Option C"],
+        D: q["Option D"]
+      },
+      correctAnswer: q["Correct Answer"],
+      marks: q["Marks"]
+    }));
+
+    const exam = await Exam.create({
+      title,
+      examCode: examCodeUpper,
+      duration,
+      startTime,
+      endTime,
+      questions,
+      createdBy: adminEmail
+    });
+
+    fs.unlinkSync(req.file.path);
+
+    res.status(201).json({ message: "Exam created", exam });
+
+  } catch (error) {
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: "Exam code already exists. Please choose a different code."
+      });
+    }
+    res.status(500).json({ error: error.message });
+  }
 };
 
 // 🔥 GET ALL EXAMS
@@ -86,41 +86,66 @@ exports.getAllExams = async (req, res) => {
 };
 
 exports.getExamByCode = async (req, res) => {
-    try {
-        const { examCode } = req.params;
+  try {
+    const { examCode } = req.params;
+    const { email } = req.query;
 
-        const exam = await Exam.findOne({ examCode });
+    const exam = await Exam.findOne({ examCode });
 
-        if (!exam)
-            return res.status(404).json({ message: "Exam not found" });
+    if (!exam)
+      return res.status(404).json({ message: "Exam not found" });
 
-        const now = new Date();
+    const now = new Date();
 
-        if (now < exam.startTime)
-            return res.status(400).json({ message: "Exam not started yet" });
+    if (now < exam.startTime)
+      return res.status(400).json({ message: "Exam not started yet" });
 
-        if (now > exam.endTime)
-            return res.status(400).json({ message: "Exam ended" });
+    if (now > exam.endTime)
+      return res.status(400).json({ message: "Exam ended" });
 
-        // 🔥 Remove correctAnswer before sending
-        const questionsForStudent = exam.questions.map(q => ({
-            _id: q._id,
-            question: q.question,
-            options: q.options
-        }));
+    // ===============================
+    // 🔥 DYNAMIC COLLECTION CHECK
+    // ===============================
 
-        res.json({
-            title: exam.title,
-            duration: exam.duration,
-            examCode: exam.examCode,
-            questions: questionsForStudent
+    if (email) {
+      const collectionName = `${examCode}_results`;
+
+      const resultCollection =
+        mongoose.connection.collection(collectionName);
+
+      const existingResult = await resultCollection.findOne({
+        studentEmail: email,
+      });
+
+      if (existingResult) {
+        return res.status(403).json({
+          message: "You have already submitted this exam.",
         });
-
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+      }
     }
-};
 
+
+    // ===============================
+    // Send Questions (without answers)
+    // ===============================
+
+    const questionsForStudent = exam.questions.map((q) => ({
+      _id: q._id,
+      question: q.question,
+      options: q.options,
+    }));
+
+    res.json({
+      title: exam.title,
+      duration: exam.duration,
+      examCode: exam.examCode,
+      questions: questionsForStudent,
+    });
+  } catch (error) {
+    console.error("Error fetching exam:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
 
 
 exports.submitExam = async (req, res) => {
