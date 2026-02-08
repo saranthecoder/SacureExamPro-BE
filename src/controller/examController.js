@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const Exam = require("../models/Exam");
-const Result = require("../models/Result");
+// const resultSchema = require("../models/Result");
 const XLSX = require("xlsx");
 const fs = require("fs");
 
@@ -110,8 +110,7 @@ exports.getExamByCode = async (req, res) => {
     if (email) {
       const collectionName = `${examCode}_results`;
 
-      const resultCollection =
-        mongoose.connection.collection(collectionName);
+      const resultCollection = mongoose.connection.collection(collectionName);
 
       const existingResult = await resultCollection.findOne({
         studentEmail: email,
@@ -161,6 +160,7 @@ exports.submitExam = async (req, res) => {
       tabSwitchCount = 0
     } = req.body;
 
+
     const exam = await Exam.findOne({ examCode });
 
     if (!exam)
@@ -198,6 +198,10 @@ exports.submitExam = async (req, res) => {
 
     // 🔥 Dynamic Schema with Anti-cheating fields
     const resultSchema = new mongoose.Schema({
+      studentName: {
+        type: String,
+        required: true
+      },
       studentEmail: String,
       answers: [{
         questionId: mongoose.Schema.Types.ObjectId,
